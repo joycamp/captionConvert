@@ -362,18 +362,36 @@ struct ContentView: View {
                 .foregroundColor(.secondary)
                 .lineLimit(3)
 
-            HStack {
-                Button("Load ITT Captions…") { openCaptions() }
-                    .keyboardShortcut("o")
-                Button("Export FCPXML…") { exportFCPXML() }
-                    .disabled(cues.isEmpty)
-                    .keyboardShortcut("e")
+            VStack(spacing: 16) {
+                VStack(spacing: 8) {
+                    Text("Step 1: Load your ITT captions file")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                    
+                    Button("Load ITT File") { openCaptions() }
+                        .keyboardShortcut("o")
+                }
+                
+                VStack(spacing: 8) {
+                    Text("Step 2: Export as FCP XML (when ready)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                    
+                    Button("Export FCP XML") { exportFCPXML() }
+                        .disabled(cues.isEmpty)
+                        .keyboardShortcut("e")
+                }
             }
             
-            HStack {
-                Button("View License") { showLicense() }
-                    .keyboardShortcut("l")
-            }
+            Spacer()
+            
+            Button("View License") { showLicense() }
+                .buttonStyle(.plain)
+                .foregroundColor(.blue)
+                .underline()
+                .keyboardShortcut("l")
         }
         .padding(24)
         .frame(width: 560, height: 200)
@@ -476,6 +494,7 @@ struct ContentView: View {
                     if let data = fcpx.data(using: .utf8) {
                         try data.write(to: url)
                         status = "Saved FCPXML"
+                        showSuccessDialog(filename: url.lastPathComponent, captionCount: cues.count)
                     } else {
                         status = "Could not encode XML to UTF-8"
                     }
@@ -504,6 +523,24 @@ struct ContentView: View {
         let licenseView = LicenseView()
         licenseWindow.contentView = NSHostingView(rootView: licenseView)
         licenseWindow.makeKeyAndOrderFront(nil)
+    }
+    
+    // Show success dialog when FCP XML is created
+    private func showSuccessDialog(filename: String, captionCount: Int) {
+        let successWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 450, height: 320),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        
+        successWindow.title = "Success! - CaptionConvert2"
+        successWindow.center()
+        successWindow.isReleasedWhenClosed = false
+        
+        let successView = SuccessView(filename: filename, captionCount: captionCount)
+        successWindow.contentView = NSHostingView(rootView: successView)
+        successWindow.makeKeyAndOrderFront(nil)
     }
 }
 
@@ -548,5 +585,51 @@ struct LicenseView: View {
         }
         .padding(30)
         .frame(width: 500, height: 400)
+    }
+}
+
+struct SuccessView: View {
+    let filename: String
+    let captionCount: Int
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 60))
+                .foregroundColor(.green)
+            
+            Text("Success!")
+                .font(.largeTitle)
+                .fontWeight(.bold)
+            
+            Text("FCP XML file created successfully")
+                .font(.body)
+                .multilineTextAlignment(.center)
+            
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Filename:")
+                        .fontWeight(.semibold)
+                    Text(filename)
+                        .foregroundColor(.secondary)
+                }
+                
+                HStack {
+                    Text("Captions converted:")
+                        .fontWeight(.semibold)
+                    Text("\(captionCount)")
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.horizontal)
+            
+            Button("OK") {
+                NSApp.keyWindow?.close()
+            }
+            .keyboardShortcut(.defaultAction)
+            .buttonStyle(.borderedProminent)
+        }
+        .padding(40)
+        .frame(width: 450, height: 320)
     }
 }
