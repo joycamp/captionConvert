@@ -301,6 +301,11 @@ struct ContentView: View {
                     .disabled(cues.isEmpty)
                     .keyboardShortcut("e")
             }
+            
+            HStack {
+                Button("View License") { showLicense() }
+                    .keyboardShortcut("l")
+            }
         }
         .padding(24)
         .frame(width: 560, height: 200)
@@ -477,5 +482,67 @@ struct ContentView: View {
                 status = "No permission to save there"
             }
         }
+    }
+    
+    // Show MIT License information
+    private func showLicense() {
+        let licenseWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 500, height: 400),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        
+        licenseWindow.title = "MIT License - CaptionConvert2"
+        licenseWindow.center()
+        licenseWindow.isReleasedWhenClosed = false
+        
+        let licenseView = LicenseView()
+        licenseWindow.contentView = NSHostingView(rootView: licenseView)
+        licenseWindow.makeKeyAndOrderFront(nil)
+    }
+}
+
+struct LicenseView: View {
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("MIT License")
+                .font(.largeTitle)
+                .fontWeight(.bold)
+            
+            Text("CaptionConvert2")
+                .font(.title2)
+                .foregroundColor(.secondary)
+            
+            Text("Copyright (c) 2025 joycamp")
+                .font(.body)
+            
+            Divider()
+            
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    Text("The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    Text("THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+            }
+            .frame(maxHeight: 200)
+            
+            Button("OK") {
+                NSApp.keyWindow?.close()
+            }
+            .keyboardShortcut(.defaultAction)
+        }
+        .padding(30)
+        .frame(width: 500, height: 400)
     }
 }
