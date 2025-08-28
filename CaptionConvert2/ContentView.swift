@@ -77,9 +77,76 @@ struct CaptionCue {
 struct FCPReference {
     var timescale: Int = 30000     // denominator in ticks per second
     var frameTicks: Int = 1001     // ticks per frame
-    var effectUID: String = "rmd/Title/Basic Title"  // replaced by your reference
+    var effectUID: String = ".../Titles.localized/Basic Text.localized/Text.localized/Text.moti"  // Text effect
     var formatName: String = "FFVideoFormat1080p2997"
     var frameDurationString: String { "\(frameTicks)/\(timescale)s" }
+    
+    // Initialize from ITT metadata
+    init(fromITT ittData: Data) {
+        let parser = ITTMetadataParser()
+        parser.parse(data: ittData)
+        
+        // Set timing based on ITT frame rate
+        self.timescale = parser.timescale
+        self.frameTicks = parser.frameTicks
+        self.formatName = parser.formatName
+    }
+    
+    // Default initializer for backward compatibility
+    init() {
+        self.timescale = 30000
+        self.frameTicks = 1001
+        self.effectUID = "rmd/Title/Basic Title"
+        self.formatName = "FFVideoFormat1080p2997"
+    }
+}
+
+// New parser to extract metadata from ITT files
+class ITTMetadataParser: NSObject, XMLParserDelegate {
+    var timescale: Int = 30000
+    var frameTicks: Int = 1001
+    var formatName: String = "FFVideoFormat1080p2997"
+    
+    func parse(data: Data) {
+        let parser = XMLParser(data: data)
+        parser.delegate = self
+        _ = parser.parse()
+    }
+    
+    func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String : String] = [:]) {
+        if name == "tt" {
+            // Extract frame rate from ITT
+            if let frameRateStr = attributeDict["ttp:frameRate"] {
+                let frameRate = Double(frameRateStr) ?? 30.0
+                
+                // Convert frame rate to timescale and frameTicks
+                // For 30fps: timescale = 30000, frameTicks = 1000
+                // For 29.97fps: timescale = 30000, frameTicks = 1001
+                if frameRate == 30.0 {
+                    self.timescale = 30000
+                    self.frameTicks = 1000
+                    self.formatName = "FFVideoFormat1080p30"
+                } else if abs(frameRate - 29.97) < 0.01 {
+                    self.timescale = 30000
+                    self.frameTicks = 1001
+                    self.formatName = "FFVideoFormat1080p2997"
+                } else if frameRate == 25.0 {
+                    self.timescale = 25000
+                    self.frameTicks = 1000
+                    self.formatName = "FFVideoFormat1080p25"
+                } else if frameRate == 24.0 {
+                    self.timescale = 24000
+                    self.frameTicks = 1000
+                    self.formatName = "FFVideoFormat1080p24"
+                } else {
+                    // Custom frame rate - calculate appropriate values
+                    self.timescale = Int(frameRate * 1000)
+                    self.frameTicks = 1000
+                    self.formatName = "FFVideoFormat1080p\(Int(frameRate))"
+                }
+            }
+        }
+    }
 }
 
 // MARK: - Parsers
@@ -258,8 +325,11 @@ private func buildFCPXML(from cues: [CaptionCue], ref: FCPReference, projectName
         xml += """
                 <title ref="r2" name="\(clipName)" offset="\(offset)" start="0s" duration="\(duration)">
                   <text>
-                    <text-style font="Helvetica Neue" fontSize="96" fontColor="1 1 1 1" alignment="center">\(textEsc)</text-style>
+                    <text-style ref="ts\(i+1)">\(textEsc)</text-style>
                   </text>
+                  <text-style-def id="ts\(i+1)">
+                    <text-style font="Helvetica Neue" fontSize="96" fontColor="1 1 1 1" alignment="center"/>
+                  </text-style-def>
                 </title>
 
         """
@@ -280,12 +350,12 @@ private func buildFCPXML(from cues: [CaptionCue], ref: FCPReference, projectName
 
 struct ContentView: View {
     @State private var cues: [CaptionCue] = []
-    @State private var status: String = "Load a reference FCPXML once, then load SRT or ITT"
+    @State private var status: String = "Load an ITT file to convert captions to FCP titles"
     @State private var ref = FCPReference()
 
     var body: some View {
         VStack(spacing: 14) {
-            Text("Captions to FCP Titles")
+            Text("ITT Captions to FCP Titles")
                 .font(.title2)
             Text(status)
                 .font(.callout)
@@ -293,9 +363,7 @@ struct ContentView: View {
                 .lineLimit(3)
 
             HStack {
-                Button("Load Reference FCPXML…") { openReference() }
-                    .keyboardShortcut("r")
-                Button("Load Captions…") { openCaptions() }
+                Button("Load ITT Captions…") { openCaptions() }
                     .keyboardShortcut("o")
                 Button("Export FCPXML…") { exportFCPXML() }
                     .disabled(cues.isEmpty)
@@ -311,75 +379,7 @@ struct ContentView: View {
         .frame(width: 560, height: 200)
     }
 
-    // Load your project reference so we match frameDuration and effect UID
-    private func openReference() {
-        let panel = NSOpenPanel()
 
-        // Accept both .fcpxmld and .fcpxml from Final Cut, plus plain .xml
-        panel.allowedFileTypes = ["fcpxmld", "fcpxml", "xml"]
-        panel.allowsOtherFileTypes = false
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.treatsFilePackagesAsDirectories = true
-
-        panel.begin { resp in
-            guard resp == .OK, let url = panel.url else { return }
-            if url.startAccessingSecurityScopedResource() {
-                defer { url.stopAccessingSecurityScopedResource() }
-                do {
-                    let data = try Data(contentsOf: url)
-                    parseReferenceFCPXML(data)
-                    status = "Reference loaded"
-                } catch {
-                    status = "Failed to read reference file"
-                }
-            } else {
-                status = "No permission to read the reference"
-            }
-        }
-    }
-
-    private func parseReferenceFCPXML(_ data: Data) {
-        class RefParser: NSObject, XMLParserDelegate {
-            var timescale = 30000
-            var frameTicks = 1001
-            var effectUID: String?
-            var formatName: String = "FFVideoFormat1080p2997"
-
-            func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName qName: String?, attributes: [String : String] = [:]) {
-                if name == "format" {
-                    if let fd = attributes["frameDuration"] {
-                        let clean = fd.replacingOccurrences(of: "s", with: "")
-                        let parts = clean.split(separator: "/").map(String.init)
-                        if parts.count == 2, let n = Int(parts[0]), let d = Int(parts[1]) {
-                            frameTicks = max(n, 1)
-                            timescale = max(d, 1)
-                        }
-                    }
-                    if let nm = attributes["name"] {
-                        formatName = nm
-                    }
-                } else if name == "effect" {
-                    if let uid = attributes["uid"], let nm = attributes["name"] {
-                        // Prefer a Title or Text effect
-                        if nm.lowercased().contains("title") || nm.lowercased().contains("text") {
-                            effectUID = uid
-                        }
-                    }
-                }
-            }
-        }
-
-        let p = RefParser()
-        let xp = XMLParser(data: data)
-        xp.delegate = p
-        _ = xp.parse()
-
-        ref.timescale = p.timescale
-        ref.frameTicks = p.frameTicks
-        ref.formatName = p.formatName
-        if let uid = p.effectUID { ref.effectUID = uid }
-    }
 
     // Load SRT or ITT
     private func openCaptions() {
@@ -419,14 +419,18 @@ struct ContentView: View {
                 status = "Loaded \(cues.count) cues from SRT"
             } else if url.pathExtension.lowercased() == "itt" || looksLikeITT(data) {
                 cues = try parseITT(data)
-                status = "Loaded \(cues.count) cues from ITT"
+                // Automatically set up FCP reference from ITT metadata
+                ref = FCPReference(fromITT: data)
+                status = "Loaded \(cues.count) cues from ITT (Frame rate: \(ref.formatName))"
             } else {
                 if let parsedSRT = try? parseSRT(string), !parsedSRT.isEmpty {
                     cues = parsedSRT
                     status = "Loaded \(cues.count) cues from SRT"
                 } else if let parsedITT = try? parseITT(data), !parsedITT.isEmpty {
                     cues = parsedITT
-                    status = "Loaded \(cues.count) cues from ITT"
+                    // Automatically set up FCP reference from ITT metadata
+                    ref = FCPReference(fromITT: data)
+                    status = "Loaded \(cues.count) cues from ITT (Frame rate: \(ref.formatName))"
                 } else {
                     status = "Could not detect SRT or ITT"
                     cues = []
